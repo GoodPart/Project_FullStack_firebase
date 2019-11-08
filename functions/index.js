@@ -85,18 +85,53 @@ app.get('/screams', (req, res) => {
 //         })
 // })
 
-app.post('/screams', (req, res) => {
+const FBAuth = (req, res, next) => {
+  let idToken
+  if(
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer ')) {
+    idToken = req.headers.authorization.split('Bearer ')[1];
+  }else {
+    console.error('No token found')
+    return res.status(403).json({ error : 'Unauthorized'});
+  }
+
+  admin.auth().verifyIdToken(idToken)
+    .then(decodedToken => {
+      req.user = decodedToken;
+      console.log(decodedToken)
+      return db.collection('users')
+        .where('userId', '==', req.user.uid)
+        .limit(1)
+        .get();
+    })
+    .then(data => {
+      req.user.handle = data.docs[0].data().handle;
+      return next()
+    })
+    .catch(err => {
+      console.error('Error while verifying token', err);
+      return res.status(403).json(err)
+    })
+}
+
+
+
+
+//회원가입 페이지
+app.post('/scream',FBAuth , (req, res) => {
   const newScream = {
     body: req.body.body,
-    userHandle: req.body.userHandle,
+    userHandle: req.user.handle,
     createdAt: new Date().toISOString()
   };
 
-  db
-    .collection('screams')
-    .add(newScream)
+  db //firebase store(데이터베이스)에 요청해라.
+    .collection('screams') //'screams를 찾고
+    .add(newScream) // newScream의 형태로 더해라.
     .then(doc => {
       res.json({ message: `document ${doc.id} created successfully!` });
+      //만약 성공적이라면 메세지를 띄워라 
     })
     .catch(err => {
       res.status(500).json({ error: `something Fuck...` })
