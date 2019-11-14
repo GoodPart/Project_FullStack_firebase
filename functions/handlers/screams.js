@@ -24,16 +24,24 @@ exports.getAllScreams = (req, res) => {
 };
 
 exports.postOneScream = (req, res) => {
+  if (req.body.body.trim() === "") {
+    return res.status(400).json({ body: "Body must not empty" });
+  }
   const newScream = {
     body: req.body.body,
     userHandle: req.user.handle,
-    createdAt: new Date().toISOString()
+    userImage: req.user.imageUrl,
+    createdAt: new Date().toISOString(),
+    likeCount: 0,
+    commentCount: 0
   };
 
   db.collection("screams") //firebase store(데이터베이스)에 요청해라. //'screams를 찾고
     .add(newScream) // newScream의 형태로 더해라.
     .then(doc => {
-      res.json({ message: `document ${doc.id} created successfully!` });
+      const resScream = newScream;
+      resScream.screamId = doc.id;
+      res.json(resScream);
       //만약 성공적이라면 메세지를 띄워라
     })
     .catch(err => {
@@ -97,5 +105,96 @@ exports.commentOnScream = (req, res) => {
     .catch(err => {
       console.log(err);
       res.status(500).json({ error: "Somthing went wrong" });
+    });
+};
+//Like a scream
+exports.likeScream = (req, res) => {
+  const likeDocument = db
+    .collection("likes")
+    .where("userHandle", "==", req.user.handle)
+    .where("screamId", "==", req.params.screamId)
+    .limit(1);
+
+  const screamDocument = db.doc(`/screams/${req.params.screamId}`);
+
+  let screamData;
+
+  screamDocument
+    .get()
+    .then(doc => {
+      if (doc.exists) {
+        screamData = doc.data();
+        screamData.screamId = doc.id;
+        return likeDocument.get();
+      } else {
+        return res.status(404).json({ error: "Scream not found" });
+      }
+    })
+    .then(data => {
+      if (data.empty) {
+        return db
+          .collection("likes")
+          .add({
+            screamId: req.params.screamId,
+            userHandle: req.user.handle //req.user
+          })
+          .then(() => {
+            screamData.likeCount++;
+            return screamDocument.update({ likeCount: screamData.likeCount });
+          })
+          .then(() => {
+            return res.json(screamData);
+          });
+      } else {
+        return res.status(400).json({ error: "scream already liked" });
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      res.status(500).json({ error: err.code });
+    });
+};
+//unlike scream
+exports.unlikeScream = (req, res) => {
+  const likeDocument = db
+    .collection("likes")
+    .where("userHandle", "==", req.user.handle)
+    .where("screamId", "==", req.params.screamId)
+    .limit(1);
+
+  const screamDocument = db.doc(`/screams/${req.params.screamId}`);
+
+  let screamData;
+
+  screamDocument
+    .get()
+    .then(doc => {
+      if (doc.exists) {
+        screamData = doc.data();
+        screamData.screamId = doc.id;
+        return likeDocument.get();
+      } else {
+        return res.status(404).json({ error: "Scream not found" });
+      }
+    })
+    .then(data => {
+      if (data.empty) {
+        return res.status(400).json({ error: "scream not liked" });
+      } else {
+        return db
+          .doc(`/likes/${data.docs[0].id}`)
+          .delete()
+          .then(() => {
+            screamData.likeCount--;
+            return screamDocument.update({ likeCount: screamData.likeCount });
+          })
+          .then(() => {
+            res.json(screamData);
+          });
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      res.status(500).json({ error: err.code });
     });
 };
